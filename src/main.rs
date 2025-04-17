@@ -2,9 +2,9 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use colored::*;
 
-mod git;
 mod ai;
 mod config;
+mod git;
 
 use config::Settings;
 
@@ -67,12 +67,17 @@ async fn main() -> Result<()> {
             };
 
             handle_merge(&git, target, source, config).await
-        },
+        }
         Command::ListUnique { target, source } => handle_list_unique(&git, target, source),
     }
 }
 
-async fn handle_merge(git: &git::GitHandler, target: &str, source: &str, config: Settings) -> Result<()> {
+async fn handle_merge(
+    git: &git::GitHandler,
+    target: &str,
+    source: &str,
+    config: Settings,
+) -> Result<()> {
     // Verify branches exist
     if !git.branch_exists(target)? {
         return Err(anyhow::anyhow!("Target branch '{}' does not exist", target));
@@ -169,12 +174,13 @@ fn handle_list_unique(git: &git::GitHandler, target: &str, source: &str) -> Resu
             let details = if parts.len() > 1 { parts[1] } else { "" };
 
             // 使用不同颜色高亮显示序号、哈希、标题，内容使用暗淡颜色
-            println!("{}. {} - {}{}",
-                (i + 1).to_string().cyan().bold(),       // 序号使用青色加粗
-                commit_id.to_string()[..7].yellow(),      // 哈希值前7位使用黄色
-                title.green().bold(),                     // 标题使用绿色加粗
+            println!(
+                "{}. {} - {}{}",
+                (i + 1).to_string().cyan().bold(), // 序号使用青色加粗
+                commit_id.to_string()[..7].yellow(), // 哈希值前7位使用黄色
+                title.green().bold(),              // 标题使用绿色加粗
                 if !details.is_empty() {
-                    format!("\n   {}", details.dimmed())  // 内容使用暗淡显示，并缩进
+                    format!("\n   {}", details.dimmed()) // 内容使用暗淡显示，并缩进
                 } else {
                     String::new()
                 }

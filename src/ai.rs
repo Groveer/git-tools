@@ -1,9 +1,10 @@
 use anyhow::Result;
 
+use crate::config::Settings;
+use crate::git::ConflictFile;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use crate::git::ConflictFile;
-use crate::config::Settings;
+use tracing::*;
 
 pub struct ConflictResolver {
     client: Client,
@@ -105,7 +106,9 @@ impl ConflictResolver {
         // 提取 our_content 中的冲突内容
         let our_content = Self::extract_conflict_content(&conflict.our_content);
         let their_content = Self::extract_conflict_content(&conflict.their_content);
-        let base_content = conflict.base_content.as_ref()
+        let base_content = conflict
+            .base_content
+            .as_ref()
             .map(|content| Self::extract_conflict_content(content))
             .unwrap_or_default();
 
@@ -149,7 +152,7 @@ impl ConflictResolver {
         #[cfg(not(test))]
         let url = "https://api.openai.com/v1/chat/completions";
 
-        tracing::debug!("Request: {:?}", request);
+        debug!("Request: {:?}", request);
 
         // 配置请求超时
         let timeout = std::time::Duration::from_secs(self.settings.timeout_seconds);
@@ -160,22 +163,34 @@ impl ConflictResolver {
 
         while attempts <= max_retries {
             attempts += 1;
-            tracing::info!("Attempt {}/{} to resolve conflict for file: {}",
-                           attempts, max_retries + 1, conflict.path);
+            info!(
+                "Attempt {}/{} to resolve conflict for file: {}",
+                attempts,
+                max_retries + 1,
+                conflict.path
+            );
 
             match self.try_resolve(url, &request, timeout).await {
                 Ok(resolution) => return Ok(resolution),
                 Err(e) => {
                     if attempts > max_retries {
-                        tracing::error!("Failed to get AI resolution after {} attempts: {}",
-                                      attempts, e);
-                        return Err(anyhow::anyhow!("Failed to get AI resolution after {} attempts: {}",
-                                                attempts, e));
+                        error!(
+                            "Failed to get AI resolution after {} attempts: {}",
+                            attempts, e
+                        );
+                        return Err(anyhow::anyhow!(
+                            "Failed to get AI resolution after {} attempts: {}",
+                            attempts,
+                            e
+                        ));
                     }
 
-                    tracing::warn!("Attempt {} failed: {}. Retrying...", attempts, e);
+                    warn!("Attempt {} failed: {}. Retrying...", attempts, e);
                     // 重试前等待一段时间（指数退避）
-                    tokio::time::sleep(std::time::Duration::from_millis(500 * 2u64.pow(attempts as u32))).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        500 * 2u64.pow(attempts as u32),
+                    ))
+                    .await;
                 }
             }
         }
@@ -184,13 +199,22 @@ impl ConflictResolver {
         Err(anyhow::anyhow!("Failed to get AI resolution"))
     }
 
-    async fn try_resolve(&self, url: &str, request: &ChatRequest, timeout: std::time::Duration) -> Result<String> {
-        let api_key = self.settings.openai_api_key.as_ref()
-                   .ok_or_else(|| anyhow::anyhow!("OpenAI API key not set"))?;
+    async fn try_resolve(
+        &self,
+        url: &str,
+        request: &ChatRequest,
+        timeout: std::time::Duration,
+    ) -> Result<String> {
+        let api_key = self
+            .settings
+            .openai_api_key
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("OpenAI API key not set"))?;
 
-        tracing::debug!("Sending request to OpenAI API: {}", url);
+        debug!("Sending request to OpenAI API: {}", url);
 
-        let response = self.client
+        let response = self
+            .client
             .post(url)
             .timeout(timeout)
             .header("Content-Type", "application/json")
@@ -203,20 +227,33 @@ impl ConflictResolver {
         // 检查响应状态
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await
+            let error_text = response
+                .text()
+                .await
                 .unwrap_or_else(|_| String::from("Unable to get error details"));
 
-            return Err(anyhow::anyhow!("API request failed with status {}: {}", status, error_text));
+            return Err(anyhow::anyhow!(
+                "API request failed with status {}: {}",
+                status,
+                error_text
+            ));
         }
 
         // 解析JSON响应
-        let response_text = response.text().await
+        let response_text = response
+            .text()
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to get response text: {}", e))?;
 
-        tracing::debug!("OpenAI API response: {}", response_text);
+        debug!("OpenAI API response: {}", response_text);
 
-        let chat_response: ChatResponse = serde_json::from_str(&response_text)
-            .map_err(|e| anyhow::anyhow!("Failed to parse API response: {}, Response: {}", e, response_text))?;
+        let chat_response: ChatResponse = serde_json::from_str(&response_text).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse API response: {}, Response: {}",
+                e,
+                response_text
+            )
+        })?;
 
         match chat_response.choices.first() {
             Some(choice) => Ok(choice.message.content.clone()),
@@ -252,11 +289,13 @@ mod tests {
         });
 
         // 检查精简后的冲突描述
-        let mock_server = server.mock("POST", "/v1/chat/completions")
+        let mock_server = server
+            .mock("POST", "/v1/chat/completions")
             .match_header("content-type", "application/json")
             .with_status(200)
             .with_body(mock_response.to_string())
-            .create_async().await;
+            .create_async()
+            .await;
 
         // 创建带有模拟设置的冲突解析器
         let mut settings = Settings::default();
@@ -272,10 +311,7 @@ mod tests {
         };
 
         // 创建带有自定义客户端和 URL 的解析器
-        let resolver = ConflictResolver::with_api_url(
-            settings,
-            server_url
-        );
+        let resolver = ConflictResolver::with_api_url(settings, server_url);
 
         // 模拟解析冲突
         let resolution = resolver.resolve_conflict(&conflict).await?;
@@ -311,11 +347,13 @@ mod tests {
         });
 
         // 检查没有基础版本的请求
-        let mock_server = server.mock("POST", "/v1/chat/completions")
+        let mock_server = server
+            .mock("POST", "/v1/chat/completions")
             .with_header("content-type", "application/json")
             .with_status(200)
             .with_body(mock_response.to_string())
-            .create_async().await;
+            .create_async()
+            .await;
 
         // 创建带有模拟设置的冲突解析器
         let mut settings = Settings::default();
@@ -331,10 +369,7 @@ mod tests {
         };
 
         // 创建带有自定义客户端和 URL 的解析器
-        let resolver = ConflictResolver::with_api_url(
-            settings,
-            server_url
-        );
+        let resolver = ConflictResolver::with_api_url(settings, server_url);
 
         // 模拟解析冲突
         let resolution = resolver.resolve_conflict(&conflict).await?;
@@ -360,12 +395,14 @@ mod tests {
         });
 
         // 创建空结果测试用的模拟服务器
-        let mock_server = server.mock("POST", "/v1/chat/completions")
-            .expect(1)  // 设置期望只收到1次请求
+        let mock_server = server
+            .mock("POST", "/v1/chat/completions")
+            .expect(1) // 设置期望只收到1次请求
             .with_header("content-type", "application/json")
             .with_status(200)
             .with_body(mock_response.to_string())
-            .create_async().await;
+            .create_async()
+            .await;
 
         // 创建带有模拟设置的冲突解析器
         let mut settings = Settings::default();
@@ -384,7 +421,7 @@ mod tests {
         // 创建带有自定义客户端和 URL 的解析器
         let resolver = ConflictResolver::with_api_url(
             settings,
-            format!("http://{}/v1/chat/completions", server.host_with_port())
+            format!("http://{}/v1/chat/completions", server.host_with_port()),
         );
 
         // 模拟解析冲突，应该返回错误
@@ -415,12 +452,14 @@ mod tests {
         });
 
         // 创建错误测试用的模拟服务器
-        let mock_server = server.mock("POST", "/v1/chat/completions")
-            .expect(1)  // 设置期望只收到1次请求
+        let mock_server = server
+            .mock("POST", "/v1/chat/completions")
+            .expect(1) // 设置期望只收到1次请求
             .with_header("content-type", "application/json")
             .with_status(401)
             .with_body(error_response.to_string())
-            .create_async().await;
+            .create_async()
+            .await;
 
         // 创建带有模拟设置的冲突解析器
         let mut settings = Settings::default();
@@ -439,7 +478,7 @@ mod tests {
         // 创建带有自定义客户端和 URL 的解析器
         let resolver = ConflictResolver::with_api_url(
             settings,
-            format!("http://{}/v1/chat/completions", server.host_with_port())
+            format!("http://{}/v1/chat/completions", server.host_with_port()),
         );
 
         // 模拟解析冲突，应该返回错误
@@ -447,12 +486,14 @@ mod tests {
 
         // 验证结果是错误
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("API request failed with status 401"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("API request failed with status 401"));
 
         // 确保模拟服务器被调用
         mock_server.assert_async().await;
 
         Ok(())
     }
-
 }

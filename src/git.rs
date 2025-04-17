@@ -1,8 +1,6 @@
 use anyhow::{anyhow, Result};
-use git2::{
-    Repository, BranchType, MergeAnalysis, Oid,
-};
-use tracing::info;
+use git2::{BranchType, MergeAnalysis, Oid, Repository};
+use tracing::*;
 
 #[derive(Debug)]
 pub struct ConflictFile {
@@ -38,7 +36,10 @@ impl GitHandler {
     /// 切换到指定分支
     pub fn checkout_branch(&self, branch_name: &str) -> Result<()> {
         let branch = self.repo.find_branch(branch_name, BranchType::Local)?;
-        let ref_name = branch.get().name().ok_or(anyhow!("Invalid branch reference"))?;
+        let ref_name = branch
+            .get()
+            .name()
+            .ok_or(anyhow!("Invalid branch reference"))?;
 
         let obj = self.repo.revparse_single(branch_name)?;
 
@@ -96,19 +97,23 @@ impl GitHandler {
                 // 配置合并选项，使用更保守的合并策略，确保冲突被正确检测
                 let mut merge_opts = git2::MergeOptions::new();
                 merge_opts
-                    .file_favor(git2::FileFavor::Normal)  // 不偏向任何一方的更改
-                    .fail_on_conflict(false);  // 允许合并时出现冲突
+                    .file_favor(git2::FileFavor::Normal) // 不偏向任何一方的更改
+                    .fail_on_conflict(false); // 允许合并时出现冲突
 
                 // 配置 checkout 选项，确保正确处理冲突
                 let mut checkout_opts = git2::build::CheckoutBuilder::new();
                 checkout_opts
-                    .allow_conflicts(true)  // 允许存在冲突
-                    .conflict_style_merge(true)  // 使用标准的合并冲突标记
-                    .use_theirs(false)  // 不默认使用他们的更改
-                    .update_index(true);  // 确保更新索引
+                    .allow_conflicts(true) // 允许存在冲突
+                    .conflict_style_merge(true) // 使用标准的合并冲突标记
+                    .use_theirs(false) // 不默认使用他们的更改
+                    .update_index(true); // 确保更新索引
 
                 // 先执行合并操作
-                self.repo.merge(&[&annotated_commit], Some(&mut merge_opts), Some(&mut checkout_opts))?;
+                self.repo.merge(
+                    &[&annotated_commit],
+                    Some(&mut merge_opts),
+                    Some(&mut checkout_opts),
+                )?;
 
                 // 更新索引并检查冲突
                 let mut index = self.repo.index()?;
@@ -118,7 +123,9 @@ impl GitHandler {
                 let has_conflicts = index.has_conflicts();
 
                 // 额外检查工作目录中是否有冲突标记
-                let workdir = self.repo.workdir()
+                let workdir = self
+                    .repo
+                    .workdir()
                     .ok_or_else(|| anyhow!("Repository has no working directory"))?;
 
                 // 强制将has_conflicts设为true用于测试
@@ -148,17 +155,17 @@ impl GitHandler {
                     self.repo.checkout_head(Some(&mut checkout_opts))?;
                     Ok(false)
                 }
-            },
+            }
             analysis if analysis.contains(MergeAnalysis::ANALYSIS_UP_TO_DATE) => {
                 info!("Branches are already up-to-date");
                 Ok(false)
-            },
+            }
             analysis if analysis.contains(MergeAnalysis::ANALYSIS_FASTFORWARD) => {
                 info!("Fast-forward merge possible");
                 self.fast_forward_merge(source_commit.id())?;
                 Ok(false)
-            },
-            _ => Err(anyhow!("Unexpected merge analysis result"))
+            }
+            _ => Err(anyhow!("Unexpected merge analysis result")),
         }
     }
 
@@ -182,10 +189,7 @@ impl GitHandler {
                     let content = blob.content();
 
                     // 尝试检测并去除空字节
-                    let filtered: Vec<u8> = content.iter()
-                        .filter(|&&b| b != 0)
-                        .cloned()
-                        .collect();
+                    let filtered: Vec<u8> = content.iter().filter(|&&b| b != 0).cloned().collect();
 
                     String::from_utf8(filtered)
                         .map_err(|e| anyhow!("Invalid UTF-8 sequence: {}", e))
@@ -225,10 +229,7 @@ impl GitHandler {
         let mut index = self.repo.index()?;
 
         // 将解决后的内容写入工作目录
-        std::fs::write(
-            self.repo.workdir().unwrap().join(path),
-            content
-        )?;
+        std::fs::write(self.repo.workdir().unwrap().join(path), content)?;
 
         // 将文件添加到索引
         index.add_path(std::path::Path::new(path))?;
@@ -239,7 +240,10 @@ impl GitHandler {
 
     /// 列出 target 分支中不存在于 source 分支的所有 commit
     pub fn list_unique_commits(&self, target: &str, source: &str) -> Result<Vec<(Oid, String)>> {
-        info!("Listing commits in '{}' that don't exist in '{}'", target, source);
+        info!(
+            "Listing commits in '{}' that don't exist in '{}'",
+            target, source
+        );
 
         // 获取源分支和目标分支的 commit ID
         let target_commit = self.get_branch_commit(target)?;
@@ -264,9 +268,7 @@ impl GitHandler {
             let commit = self.repo.find_commit(oid)?;
 
             // 获取提交信息
-            let message = commit.message()
-                .unwrap_or("[无效的提交信息]")
-                .to_string();
+            let message = commit.message().unwrap_or("[无效的提交信息]").to_string();
 
             results.push((oid, message));
         }
@@ -285,7 +287,7 @@ impl GitHandler {
 
         let parent_commits = [
             &self.repo.find_commit(target_commit)?,
-            &self.repo.find_commit(source_commit)?
+            &self.repo.find_commit(source_commit)?,
         ];
 
         // 使用更安全的方式获取签名
@@ -350,9 +352,9 @@ impl GitHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
     use std::path::Path;
+    use tempfile::TempDir;
 
     fn setup_test_repo() -> Result<(TempDir, GitHandler)> {
         let temp_dir = TempDir::new()?;
@@ -385,7 +387,7 @@ mod tests {
                 &signature,
                 "Initial commit",
                 &tree,
-                &[]
+                &[],
             )?;
 
             repo.branch("main", &repo.find_commit(commit_id)?, false)?;
@@ -394,8 +396,15 @@ mod tests {
         Ok((temp_dir, GitHandler { repo }))
     }
 
-    fn create_file_and_commit(repo: &Repository, path: &str, content: &str, message: &str) -> Result<Oid> {
-        let workdir = repo.workdir().ok_or_else(|| anyhow!("No working directory"))?;
+    fn create_file_and_commit(
+        repo: &Repository,
+        path: &str,
+        content: &str,
+        message: &str,
+    ) -> Result<Oid> {
+        let workdir = repo
+            .workdir()
+            .ok_or_else(|| anyhow!("No working directory"))?;
         let file_path = workdir.join(path);
 
         // 写入文件内容前移除空字节
@@ -420,7 +429,7 @@ mod tests {
             &signature,
             message,
             &tree,
-            &[&parent_commit]
+            &[&parent_commit],
         )?;
 
         Ok(commit_id)
@@ -434,19 +443,18 @@ mod tests {
         assert!(!handler.branch_exists("test-branch")?);
 
         // 创建新分支
-        let _branch_ref = handler.repo.branch("test-branch",
+        let _branch_ref = handler.repo.branch(
+            "test-branch",
             &handler.repo.head()?.peel_to_commit()?,
-            false)?;
+            false,
+        )?;
 
         // 测试分支存在
         assert!(handler.branch_exists("test-branch")?);
 
         // 测试切换分支
         handler.checkout_branch("test-branch")?;
-        assert_eq!(
-            handler.repo.head()?.shorthand().unwrap(),
-            "test-branch"
-        );
+        assert_eq!(handler.repo.head()?.shorthand().unwrap(), "test-branch");
 
         Ok(())
     }
@@ -457,9 +465,11 @@ mod tests {
 
         // 创建一个新分支
         let original_head = handler.repo.head()?.peel_to_commit()?.id();
-        let _branch_ref = handler.repo.branch("test-branch",
+        let _branch_ref = handler.repo.branch(
+            "test-branch",
             &handler.repo.head()?.peel_to_commit()?,
-            false)?;
+            false,
+        )?;
 
         // 获取新分支的提交 ID
         let branch_commit = handler.get_branch_commit("test-branch")?;
@@ -479,15 +489,21 @@ mod tests {
         let (_temp_dir, handler) = setup_test_repo()?;
 
         println!("Setting up feature branch...");
-        let _branch = handler.repo.branch("feature",
-            &handler.repo.head()?.peel_to_commit()?,
-            false)?;
+        let _branch =
+            handler
+                .repo
+                .branch("feature", &handler.repo.head()?.peel_to_commit()?, false)?;
 
         println!("Checking out feature branch...");
         handler.checkout_branch("feature")?;
 
         println!("Creating file in feature branch...");
-        create_file_and_commit(&handler.repo, "feature.txt", "feature content", "Add feature")?;
+        create_file_and_commit(
+            &handler.repo,
+            "feature.txt",
+            "feature content",
+            "Add feature",
+        )?;
 
         println!("Switching back to main branch...");
         handler.checkout_branch("main")?;
@@ -498,7 +514,10 @@ mod tests {
         println!("Checking results...");
         println!("Has conflicts: {}", has_conflicts);
 
-        let workdir = handler.repo.workdir().ok_or_else(|| anyhow!("No working directory"))?;
+        let workdir = handler
+            .repo
+            .workdir()
+            .ok_or_else(|| anyhow!("No working directory"))?;
         let file_path = workdir.join("feature.txt");
         println!("Checking file at: {}", file_path.display());
         println!("File exists: {}", file_path.exists());
@@ -522,9 +541,10 @@ mod tests {
         let (_temp_dir, handler) = setup_test_repo()?;
 
         println!("Creating feature branch...");
-        let _branch = handler.repo.branch("feature",
-            &handler.repo.head()?.peel_to_commit()?,
-            false)?;
+        let _branch =
+            handler
+                .repo
+                .branch("feature", &handler.repo.head()?.peel_to_commit()?, false)?;
 
         println!("Creating conflict file in main branch...");
         create_file_and_commit(&handler.repo, "conflict.txt", "main content", "Main change")?;
@@ -533,7 +553,12 @@ mod tests {
         handler.checkout_branch("feature")?;
 
         println!("Creating conflict file in feature branch...");
-        create_file_and_commit(&handler.repo, "conflict.txt", "feature content", "Feature change")?;
+        create_file_and_commit(
+            &handler.repo,
+            "conflict.txt",
+            "feature content",
+            "Feature change",
+        )?;
 
         println!("Switching back to main branch...");
         handler.checkout_branch("main")?;
@@ -565,21 +590,36 @@ mod tests {
         let (_temp_dir, handler) = setup_test_repo()?;
 
         // 创建一个测试目录以存放冲突文件
-        let workdir = handler.repo.workdir().ok_or_else(|| anyhow!("No working directory"))?;
+        let workdir = handler
+            .repo
+            .workdir()
+            .ok_or_else(|| anyhow!("No working directory"))?;
 
         // 创建两个分支并制造冲突
-        let _branch = handler.repo.branch("conflict-branch",
+        let _branch = handler.repo.branch(
+            "conflict-branch",
             &handler.repo.head()?.peel_to_commit()?,
-            false)?;
+            false,
+        )?;
 
         // 在主分支创建测试文件
-        create_file_and_commit(&handler.repo, "test_conflict.txt", "main content", "Add file in main")?;
+        create_file_and_commit(
+            &handler.repo,
+            "test_conflict.txt",
+            "main content",
+            "Add file in main",
+        )?;
 
         // 切换到冲突分支
         handler.checkout_branch("conflict-branch")?;
 
         // 在冲突分支创建同名文件但内容不同
-        create_file_and_commit(&handler.repo, "test_conflict.txt", "branch content", "Add file in branch")?;
+        create_file_and_commit(
+            &handler.repo,
+            "test_conflict.txt",
+            "branch content",
+            "Add file in branch",
+        )?;
 
         // 切回主分支
         handler.checkout_branch("main")?;
@@ -590,8 +630,10 @@ mod tests {
 
         // 创建一个模拟的冲突文件（真实情况下这应该由Git自动生成）
         let test_conflict_path = workdir.join("test_conflict.txt");
-        std::fs::write(&test_conflict_path,
-            "<<<<<<< HEAD\nmain content\n=======\nbranch content\n>>>>>>> conflict-branch")?;
+        std::fs::write(
+            &test_conflict_path,
+            "<<<<<<< HEAD\nmain content\n=======\nbranch content\n>>>>>>> conflict-branch",
+        )?;
 
         // 尝试获取冲突
         let conflicts = handler.get_conflicts()?;
@@ -608,12 +650,18 @@ mod tests {
         let (_temp_dir, handler) = setup_test_repo()?;
 
         // 创建一个测试文件
-        let workdir = handler.repo.workdir().ok_or_else(|| anyhow!("No working directory"))?;
+        let workdir = handler
+            .repo
+            .workdir()
+            .ok_or_else(|| anyhow!("No working directory"))?;
         let conflict_path = "conflict_to_resolve.txt";
         let file_path = workdir.join(conflict_path);
 
         // 写入冲突内容
-        std::fs::write(&file_path, "<<<<<<< HEAD\nOur content\n=======\nTheir content\n>>>>>>> feature")?;
+        std::fs::write(
+            &file_path,
+            "<<<<<<< HEAD\nOur content\n=======\nTheir content\n>>>>>>> feature",
+        )?;
 
         // 应用解决方案
         let resolved_content = "Resolved content";
@@ -625,7 +673,9 @@ mod tests {
 
         // 验证索引已更新
         let index = handler.repo.index()?;
-        assert!(index.get_path(std::path::Path::new(conflict_path), 0).is_some());
+        assert!(index
+            .get_path(std::path::Path::new(conflict_path), 0)
+            .is_some());
 
         Ok(())
     }
@@ -635,25 +685,40 @@ mod tests {
         let (_temp_dir, handler) = setup_test_repo()?;
 
         // 创建一个分支
-        let _branch = handler.repo.branch("feature-abort",
+        let _branch = handler.repo.branch(
+            "feature-abort",
             &handler.repo.head()?.peel_to_commit()?,
-            false)?;
+            false,
+        )?;
 
         // 切换到该分支
         handler.checkout_branch("feature-abort")?;
 
         // 创建一个提交
-        create_file_and_commit(&handler.repo, "abort_test.txt", "abort test content", "Add abort test file")?;
+        create_file_and_commit(
+            &handler.repo,
+            "abort_test.txt",
+            "abort test content",
+            "Add abort test file",
+        )?;
 
         // 切回主分支
         handler.checkout_branch("main")?;
 
         // 创建相同文件的不同版本
-        create_file_and_commit(&handler.repo, "abort_test.txt", "main content for abort test", "Add abort test in main")?;
+        create_file_and_commit(
+            &handler.repo,
+            "abort_test.txt",
+            "main content for abort test",
+            "Add abort test in main",
+        )?;
 
         // 模拟合并状态 - 在真实情况下会由Git创建MERGE_HEAD等文件
         // 我们可以手动创建一些文件来模拟合并状态
-        let workdir = handler.repo.workdir().ok_or_else(|| anyhow!("No working directory"))?;
+        let workdir = handler
+            .repo
+            .workdir()
+            .ok_or_else(|| anyhow!("No working directory"))?;
         let git_dir = workdir.join(".git");
 
         // 创建一个MERGE_HEAD文件（通常在合并过程中会存在）
@@ -665,7 +730,10 @@ mod tests {
         handler.abort_merge()?;
 
         // 验证MERGE_HEAD不再存在
-        assert!(!merge_head_path.exists(), "MERGE_HEAD should have been removed");
+        assert!(
+            !merge_head_path.exists(),
+            "MERGE_HEAD should have been removed"
+        );
 
         Ok(())
     }
@@ -675,18 +743,29 @@ mod tests {
         let (_temp_dir, handler) = setup_test_repo()?;
 
         // 创建一个新分支
-        let _branch = handler.repo.branch("feature",
-            &handler.repo.head()?.peel_to_commit()?,
-            false)?;
+        let _branch =
+            handler
+                .repo
+                .branch("feature", &handler.repo.head()?.peel_to_commit()?, false)?;
 
         // 切换到新分支并创建几个提交
         handler.checkout_branch("feature")?;
 
         // 创建第一个提交
-        create_file_and_commit(&handler.repo, "feature1.txt", "feature1 content", "Add feature1")?;
+        create_file_and_commit(
+            &handler.repo,
+            "feature1.txt",
+            "feature1 content",
+            "Add feature1",
+        )?;
 
         // 创建第二个提交
-        create_file_and_commit(&handler.repo, "feature2.txt", "feature2 content", "Add feature2")?;
+        create_file_and_commit(
+            &handler.repo,
+            "feature2.txt",
+            "feature2 content",
+            "Add feature2",
+        )?;
 
         // 切回 main 分支
         handler.checkout_branch("main")?;

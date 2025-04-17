@@ -88,10 +88,7 @@ impl Settings {
         }
 
         // 加载环境变量
-        builder = builder.add_source(
-            Environment::with_prefix("GT")
-                .try_parsing(true)
-        );
+        builder = builder.add_source(Environment::with_prefix("GT").try_parsing(true));
 
         // 解析配置
         let mut config: Settings = builder.build()?.try_deserialize()?;
@@ -135,7 +132,7 @@ impl Settings {
     fn get_config_path() -> Result<PathBuf, ConfigError> {
         let home = dirs::home_dir().ok_or_else(|| {
             ConfigError::LoadError(config::ConfigError::NotFound(
-                "Home directory not found".to_string()
+                "Home directory not found".to_string(),
             ))
         })?;
         Ok(home.join(".config/git-tools/config.json"))
@@ -203,4 +200,3 @@ mod tests {
         Ok(())
     }
 }
-
