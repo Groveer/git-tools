@@ -41,6 +41,7 @@ dirs = "6.0"
 
 # Testing
 tempfile = "3"  # 用于测试的临时目录
+colored = "3.0.0"
 
 [dev-dependencies]
 mockito = "1.7.0"

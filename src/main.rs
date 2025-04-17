@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use colored::*;
 
 mod git;
 mod ai;
@@ -162,7 +163,22 @@ fn handle_list_unique(git: &git::GitHandler, target: &str, source: &str) -> Resu
     } else {
         println!("发现 {} 个独有的提交:", unique_commits.len());
         for (i, (commit_id, message)) in unique_commits.iter().enumerate() {
-            println!("{}. {} - {}", i + 1, commit_id, message);
+            // 分割提交信息，获取标题和详细内容
+            let parts: Vec<&str> = message.splitn(2, '\n').collect();
+            let title = parts[0];
+            let details = if parts.len() > 1 { parts[1] } else { "" };
+
+            // 使用不同颜色高亮显示序号、哈希、标题，内容使用暗淡颜色
+            println!("{}. {} - {}{}",
+                (i + 1).to_string().cyan().bold(),       // 序号使用青色加粗
+                commit_id.to_string()[..7].yellow(),      // 哈希值前7位使用黄色
+                title.green().bold(),                     // 标题使用绿色加粗
+                if !details.is_empty() {
+                    format!("\n   {}", details.dimmed())  // 内容使用暗淡显示，并缩进
+                } else {
+                    String::new()
+                }
+            );
         }
     }
 
