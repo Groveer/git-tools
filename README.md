@@ -27,7 +27,9 @@ cargo build --release
 
 ## ⚙️ 配置
 
-首次使用前，需要配置OpenAI API密钥。你可以通过以下方式之一进行配置：
+**注意：** 只有使用AI功能（如自动解决合并冲突）时才需要配置OpenAI API密钥。其他功能（如列出独有提交）可以正常使用，无需配置API密钥。
+
+如需使用AI功能，你可以通过以下方式之一进行配置：
 
 1. 创建配置文件：
 
@@ -60,7 +62,7 @@ cargo build --release
 
 Git-Tools 提供了多个子命令来完成不同的任务：
 
-### 合并分支并自动解决冲突
+### 合并分支并自动解决冲突 (需要OpenAI API密钥)
 
 ```bash
 git-tools merge -t 目标分支 -s 源分支
@@ -72,7 +74,7 @@ git-tools merge -t 目标分支 -s 源分支
 git-tools merge -t main -s feature
 ```
 
-### 列出分支独有的 commit
+### 列出分支独有的 commit (无需OpenAI API密钥)
 
 查看一个分支中不存在于另一个分支的 commit：
 
@@ -97,12 +99,12 @@ git-tools list-unique -t feature -s main
   -V, --version          显示版本信息
 
 子命令:
-  merge        合并分支并使用AI解决冲突
+  merge        合并分支并使用AI解决冲突 (需要OpenAI API密钥)
                参数:
                -t, --target <TARGET>  要合并到的目标分支
                -s, --source <SOURCE>  要从中合并的源分支
 
-  list-unique  列出目标分支中不在源分支中的提交
+  list-unique  列出目标分支中不在源分支中的提交 (无需OpenAI API密钥)
                参数:
                -t, --target <TARGET>  要检查的目标分支
                -s, --source <SOURCE>  要比较的源分支
@@ -116,10 +118,10 @@ git-tools list-unique -t feature -s main
 
 1. 🚦 工具会尝试将源分支合并到目标分支
 2. ⚠️ 如果遇到冲突，会显示冲突详情
-3. 🤖 对每个冲突文件，使用AI生成解决方案
+3. 🤖 如果配置了OpenAI API密钥，将使用AI生成解决方案
 4. 🔧 自动应用AI生成的解决方案
 5. ✅ 如果所有冲突都成功解决，会提示用户检查并提交更改
-6. ⚠️ 如果某些冲突无法自动解决，会中止合并并提示手动解决
+6. ⚠️ 如果没有配置API密钥或某些冲突无法自动解决，会中止合并并提示手动解决
 
 ### 列出独有 commit
 
@@ -175,6 +177,6 @@ cargo test
 
 ## ⚠️ 注意事项
 
-- 🔑 需要有效的OpenAI API密钥才能使用AI功能
+- 🔑 只有使用AI相关功能时才需要OpenAI API密钥
 - 👀 建议在应用AI解决方案前进行代码审查
 - 🛠️ 某些复杂冲突可能仍需人工干预
