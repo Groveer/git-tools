@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use colored::*;
+use tracing_subscriber::prelude::*;
 
 mod ai;
 mod config;
@@ -45,8 +46,11 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt::init();
+    // 初始化 journald 日志订阅器
+    let journald_layer = tracing_journald::layer().expect("Failed to connect to systemd-journald");
+
+    // 设置全局日志订阅器
+    tracing_subscriber::registry().with(journald_layer).init();
 
     // Parse command line arguments
     let cli = Cli::parse();
